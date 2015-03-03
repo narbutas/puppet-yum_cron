@@ -111,99 +111,83 @@
 # Copyright 2013 Trey Dockendorf
 #
 class yum_cron (
-  $yum_parameter          = '',
-  $check_only             = 'yes',
-  $check_first            = 'no',
-  $download_only          = 'no',
-  $error_level            = 0,
-  $debug_level            = 0,
-  $randomwait             = '60',
-  $mailto                 = 'root',
-  $systemname             = $::fqdn,
+  $ensure                 = 'present',
+  $enable                 = true,
+  $download_updates       = true,
+  $apply_updates          = false,
+  $mail_to                = 'root',
+  $system_name            = $::fqdn,
   $days_of_week           = '0123456',
-  $cleanday               = '0',
-  $service_waits          = 'yes',
-  $service_wait_time      = '300',
+  $package_ensure         = undef,
   $package_name           = $yum_cron::params::package_name,
   $service_name           = $yum_cron::params::service_name,
-  $service_ensure         = 'running',
-  $service_enable         = true,
+  $service_ensure         = undef,
+  $service_enable         = undef,
   $service_hasstatus      = $yum_cron::params::service_hasstatus,
   $service_hasrestart     = $yum_cron::params::service_hasrestart,
-  $service_autorestart    = true,
   $config_path            = $yum_cron::params::config_path,
-  $config_template        = $yum_cron::params::config_template,
   $yum_autoupdate_ensure  = 'disabled'
 ) inherits yum_cron::params {
 
-  if $::operatingsystemmajrelease == '6' {
-    # Only validate parameter for EL6 as this value does not exist for EL5
-    validate_re($check_first, ['^yes', '^no'])
-  }
-
-  if $::operatingsystemmajrelease < '7' {
-    validate_re($download_only, ['^yes', '^no'])
-  }
-
-  validate_re($check_only, ['^yes', '^no'])
-  validate_bool($service_autorestart)
+  validate_bool($enable)
+  validate_bool($download_updates)
+  validate_bool($apply_updates)
+  validate_string($mail_to)
+  validate_string($system_name)
+  validate_string($days_of_week)
   validate_re($yum_autoupdate_ensure, ['^undef', '^UNSET', '^absent', '^disabled'])
 
-  # This gives the option to not manage the service 'ensure' state.
-  $service_ensure_real  = $service_ensure ? {
-    /UNSET|undef/ => undef,
-    default       => $service_ensure,
-  }
-
-  # This gives the option to not manage the service 'enable' state.
-  $service_enable_real  = $service_enable ? {
-    /UNSET|undef/ => undef,
-    default       => $service_enable,
-  }
-
-  $service_subscribe = $service_autorestart ? {
-    true  => File['yum-cron-config'],
-    false => undef,
-  }
-
-  package { 'yum-cron':
-    ensure => present,
-    name   => $package_name,
-    before => File['yum-cron-config'],
-  }
-
-  service { 'yum-cron':
-    ensure     => $service_ensure_real,
-    enable     => $service_enable_real,
-    name       => $service_name,
-    hasstatus  => $service_hasstatus,
-    hasrestart => $service_hasrestart,
-    subscribe  => $service_subscribe,
-  }
-
-  file { 'yum-cron-config':
-    ensure  => present,
-    path    => $config_path,
-    content => template($config_template),
-    owner   => 'root',
-    group   => 'root',
-    mode    => '0644',
-    before  => Service['yum-cron'],
-  }
-
-  if $::operatingsystem =~ /Scientific/ {
-    if $yum_autoupdate_ensure == 'absent' {
-      package { 'yum-autoupdate':
-        ensure  => absent,
+  case $ensure {
+    'present': {
+      $package_ensure_default   = 'present'
+      if $enable {
+        $service_ensure_default = 'running'
+        $service_enable_default = true
+        $config_notify          = Service['yum-cron']
+      } else {
+        $service_ensure_default = 'stopped'
+        $service_enable_default = false
+        $config_notify          = undef
       }
     }
-
-    if $yum_autoupdate_ensure == 'disabled' {
-      file_line { 'disable yum-autoupdate':
-        path  => '/etc/sysconfig/yum-autoupdate',
-        line  => 'ENABLED=false',
-        match => '^ENABLED=.*',
-      }
+    'absent': {
+      $package_ensure_default = 'absent'
+      $service_ensure_default = 'stopped'
+      $service_enable_default = false
+      $config_notify          = undef
+    }
+    default: {
+      fail('ensure parameter must be present or absent')
     }
   }
+
+  $package_ensure_real = pick($package_ensure, $package_ensure_default)
+  $service_ensure_real = pick($service_ensure, $service_ensure_default)
+  $service_enable_real = pick($service_enable, $service_enable_default)
+
+  if $apply_updates {
+    $apply_updates_str  = 'yes'
+    $check_only         = 'no'
+  } else {
+    $apply_updates_str  = 'no'
+    $check_only         = 'yes'
+  }
+
+  if $download_updates {
+    $download_updates_str = 'yes'
+    $download_only        = 'yes'
+  } else {
+    $download_updates_str = 'no'
+    $download_only        = 'no'
+  }
+
+  include yum_cron::install
+  include yum_cron::config
+  include yum_cron::service
+
+  anchor { 'yum_cron::start': }->
+  Class['yum_cron::install']->
+  Class['yum_cron::config']->
+  Class['yum_cron::service']->
+  anchor { 'yum_cron::end': }
 }

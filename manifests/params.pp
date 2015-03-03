@@ -21,15 +21,12 @@ class yum_cron::params {
 
       case $::operatingsystemmajrelease {
         '7': {
-          $config_template  = 'yum_cron/yum-cron.conf.erb'
           $config_path      = '/etc/yum/yum-cron.conf'
         }
         '6': {
-          $config_template  = 'yum_cron/yum-cron.erb'
           $config_path      = '/etc/sysconfig/yum-cron'
         }
         '5': {
-          $config_template  = 'yum_cron/yum-cron-el5.erb'
           $config_path      = '/etc/sysconfig/yum-cron'
         }
         default: {
