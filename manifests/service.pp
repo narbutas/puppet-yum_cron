@@ -10,6 +10,5 @@ class yum_cron::service {
     name       => $yum_cron::service_name,
     hasstatus  => $yum_cron::service_hasstatus,
     hasrestart => $yum_cron::service_hasrestart,
-    subscribe  => $yum_cron::service_subscribe,
   }
 }
